@@ -1,3 +1,35 @@
+# Design Decisions
+
+## D1 — PostgreSQL 16 as the database engine
+Chosen for mature CHECK/UNIQUE/FK constraint support, which is central to this
+project's approach of enforcing acceptance criteria at the DDL level rather
+than only in application code.
+
+## D2 — FastAPI as the API framework
+Chosen for automatic request validation, built-in OpenAPI docs (useful for
+the video demo), and straightforward `X-API-Key` header dependency injection
+for the write-endpoint protection required by the acceptance criteria.
+
+## D3 — Python/tkinter for the frontend
+Chosen because it ships with the Python standard library, requires no extra
+runtime dependency, and packages cleanly into a `.deb` archive -- matching the
+mandatory `.deb` submission format without needing a heavier GUI framework.
+
+## D4 — Plain Elo rating with K-factor 20
+Chosen over more complex systems (e.g. Glicko) for a fixed, well-understood
+formula that is easy to test deterministically for the symmetry requirement
+in the acceptance criteria (both players' ratings must move symmetrically).
+
+## D5 — Docker Compose for orchestration
+Chosen for one-command deployment on the lecture server (`docker compose up
+-d`), keeping Postgres and the API isolated from the host, and reproducible
+setup regardless of which machine (Linux or macOS) development happens on.
+
+## D6 — `.deb` package as the frontend submission format
+Required by the course. Does not require developing on a Linux machine -- the
+package is built and tested at the end using a Docker Ubuntu/Debian
+container, keeping day-to-day development on macOS fully viable.
+
 
 ## Acceptance Criterion → Enforcement Mapping
 
