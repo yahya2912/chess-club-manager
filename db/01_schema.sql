@@ -36,10 +36,6 @@ CREATE TABLE tournament (
 
 -- --------------------------------------------------------
 -- registration
--- Associative entity resolving the N:M player <-> tournament
--- relationship. Composite PK enforces acceptance criterion:
--- "registering the same player twice for the same tournament
--- is rejected with HTTP 409".
 -- --------------------------------------------------------
 CREATE TABLE registration (
     player_id     INTEGER NOT NULL REFERENCES player(id),
@@ -51,8 +47,6 @@ CREATE TABLE registration (
 
 -- --------------------------------------------------------
 -- round
--- 1:N from tournament. UNIQUE(tournament_id, round_no) stops
--- the same round number being created twice for one tournament.
 -- --------------------------------------------------------
 CREATE TABLE round (
     id            SERIAL PRIMARY KEY,
@@ -63,9 +57,6 @@ CREATE TABLE round (
 
 -- --------------------------------------------------------
 -- game
--- Acceptance criteria enforced here:
---   - result not in {'1-0','0-1','1/2-1/2'} -> 400 (CHECK)
---   - white_id = black_id -> 400 (CHECK)
 -- --------------------------------------------------------
 CREATE TABLE game (
     id            SERIAL PRIMARY KEY,
@@ -80,8 +71,6 @@ CREATE TABLE game (
 
 -- --------------------------------------------------------
 -- rating_history
--- 1:N from player. One row per Elo change, feeds the
--- "Elo progression over the last twelve months" stats screen.
 -- --------------------------------------------------------
 CREATE TABLE rating_history (
     id            SERIAL PRIMARY KEY,
@@ -92,8 +81,6 @@ CREATE TABLE rating_history (
 
 -- ============================================================
 -- Indexes
--- Support the JOIN + aggregation queries named in the API
--- design section (standings, per-opening stats, Elo history).
 -- ============================================================
 CREATE INDEX game_eco_idx ON game (eco_code);
 CREATE INDEX game_round_idx ON game (round_id);
