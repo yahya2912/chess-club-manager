@@ -1,4 +1,5 @@
 # Chess Club Tournament & Rating Manager
+![CI](https://github.com/yahya2912/chess-club-manager/actions/workflows/ci.yml/badge.svg)
 
 Term project · Introduction to Database Management Systems · THGA Bochum
 Author: Yahya El Idrissi · Due: 13.09.2026
