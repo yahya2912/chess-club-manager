@@ -57,3 +57,32 @@ Also worth noting: `round(tournament_id, round_no)` carries a UNIQUE
 constraint stopping duplicate round numbers within one tournament. This isn't
 one of the six numbered acceptance criteria, but it's schema-level integrity
 that the same reasoning applies to.
+
+## D7 — psycopg3 (`psycopg[binary]`) instead of psycopg2
+The course material (Vorlesung 8) introduces the PostgreSQL driver as
+`psycopg2`. This project uses its successor, **psycopg3**, because the
+development machine runs Python 3.14, for which `psycopg2-binary` has no
+prebuilt wheel and fails to compile from source (missing `pg_config`).
+psycopg3 is the actively maintained successor from the same authors and
+ships Python 3.14 wheels. The connection API is nearly identical; the only
+change in this codebase is dict-row handling (`row_factory=dict_row` instead
+of `cursor_factory=RealDictCursor`). Pinned to `psycopg[binary]==3.2.10`, the
+lowest release offering a 3.14 binary wheel.
+
+## D8 — `SERIAL` primary keys (deviation from course-recommended IDENTITY)
+The schema uses `SERIAL` for auto-increment primary keys. The Vorlesung 7
+handout recommends the ISO-standard `GENERATED ALWAYS AS IDENTITY` instead,
+noting "In diesem Kurs verwenden wir die ISO-konforme Variante." `SERIAL` was
+kept because it was already in place and working, and the difference is
+invisible at the API layer (both produce integer auto-increment keys). This
+is a known deviation, recorded here for grading transparency; migrating to
+`IDENTITY` is a low-risk change should it be required.
+
+## D9 — Standings tiebreak: wins, not Buchholz (pending)
+The acceptance-criteria table above (criterion 5) lists a Buchholz tiebreak.
+The current `GET /standings` implementation orders by `points DESC, wins DESC,
+name ASC` — it does **not** yet compute Buchholz. This is tracked as
+outstanding work: Buchholz requires summing the scores of each player's
+opponents, a second aggregation pass over the games. Recorded here so the gap
+between the stated criterion and the current implementation is explicit rather
+than accidental.
