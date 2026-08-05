@@ -7,3 +7,4 @@ __pycache__/
 *.deb
 .venv/
 .DS_Store
+.pytest_cache/
