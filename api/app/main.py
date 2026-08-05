@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from app.routers import players, tournaments, rating_history
+from app.routers import players, tournaments, rating_history, standings
 
 app = FastAPI(title="Chess Club Tournament & Rating Manager API")
 
@@ -13,3 +13,4 @@ def health():
 app.include_router(players.router)
 app.include_router(tournaments.router)
 app.include_router(rating_history.router)
+app.include_router(standings.router)
