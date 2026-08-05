@@ -78,11 +78,9 @@ invisible at the API layer (both produce integer auto-increment keys). This
 is a known deviation, recorded here for grading transparency; migrating to
 `IDENTITY` is a low-risk change should it be required.
 
-## D9 — Standings tiebreak: wins, not Buchholz (pending)
-The acceptance-criteria table above (criterion 5) lists a Buchholz tiebreak.
-The current `GET /standings` implementation orders by `points DESC, wins DESC,
-name ASC` — it does **not** yet compute Buchholz. This is tracked as
-outstanding work: Buchholz requires summing the scores of each player's
-opponents, a second aggregation pass over the games. Recorded here so the gap
-between the stated criterion and the current implementation is explicit rather
-than accidental.
+## D9 — Standings tiebreak: full Buchholz
+Criterion 5 requires a Buchholz tiebreak. `GET /standings` computes full
+Buchholz (sum of every opponent's total tournament points) via a two-CTE
+query: `totals` gives each player's points, then `buchholz` sums opponents'
+totals. Ranking order is points DESC, Buchholz DESC, wins DESC, name ASC.
+Verified by an invariant test: total Buchholz == Σ(player_total × games_played).

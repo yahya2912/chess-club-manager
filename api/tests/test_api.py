@@ -105,3 +105,16 @@ def test_standings_ranked_and_balanced(client, auth):
     # Every player's W/D/L sums to their games_played
     for r in rows:
         assert r["wins"] + r["draws"] + r["losses"] == r["games_played"]
+
+# ----------------------------------------------------------------------
+# /buchholz invariant: sum of Buchholz == sum over players of (total_points * games_played)
+# ----------------------------------------------------------------------
+def test_standings_buchholz_invariant(client, auth):
+    rows = client.get("/standings?tournament_id=1", headers=auth).json()
+    # Every player has a buchholz field
+    assert all("buchholz" in r for r in rows)
+    # Invariant: sum of Buchholz == sum over players of (total_points * games_played),
+    # since each player's total is added to each opponent's Buchholz once per game.
+    total_buchholz = sum(r["buchholz"] for r in rows)
+    expected = sum(r["points"] * r["games_played"] for r in rows)
+    assert total_buchholz == expected
