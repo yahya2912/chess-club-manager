@@ -10,8 +10,9 @@ class PlayersTab(ttk.Frame):
     COLUMNS = ("id", "name", "birth_year", "current_elo")
     HEADINGS = ("ID", "Name", "Born", "Elo")
 
-    def __init__(self, parent):
+    def __init__(self, parent, on_success=None):
         super().__init__(parent)
+        self.on_success = on_success or (lambda: None)
 
         # Top bar
         bar = ttk.Frame(self)
@@ -213,6 +214,7 @@ class PlayersTab(ttk.Frame):
             window.destroy()
 
             self.load()
+            self.on_success()
 
             messagebox.showinfo(
                 "Player created",
