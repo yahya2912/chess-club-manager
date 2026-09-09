@@ -18,7 +18,7 @@ class HistoryTab(ttk.Frame):
         self.player = ttk.Combobox(bar, state="readonly", width=30)
         self.player.pack(side="left", padx=6)
         self.player.bind("<<ComboboxSelected>>", lambda e: self.load())
-        ttk.Button(bar, text="Refresh", command=self.load).pack(side="left", padx=6)
+        ttk.Button(bar, text="Refresh", command=self.load_players).pack(side="left", padx=6)
         self.status = ttk.Label(bar, text="")
         self.status.pack(side="left", padx=10)
 
@@ -33,16 +33,27 @@ class HistoryTab(ttk.Frame):
         self.load_players()
 
     def load_players(self):
+        """Refresh the player dropdown and preserve its current selection."""
+        old_label = self.player.get() or "All players"
+
         try:
             players = api_client.get_players()
         except api_client.ApiError as e:
             self.status.config(text=f"Error: {e.detail}")
             return
+
         self._id_by_label = {"All players": None}
         for p in players:
             self._id_by_label[p["name"]] = p["id"]
-        self.player["values"] = list(self._id_by_label.keys())
-        self.player.current(0)
+
+        values = list(self._id_by_label.keys())
+        self.player["values"] = values
+
+        if old_label in self._id_by_label:
+            self.player.set(old_label)
+        else:
+            self.player.current(0)
+
         self.load()
 
     def load(self):
