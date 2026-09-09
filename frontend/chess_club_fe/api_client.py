@@ -44,6 +44,16 @@ def _request(method, path, params=None, body=None):
 def get_players():
     return _request("GET", "/players")
 
+def create_player(name, birth_year=None, current_elo=1000):
+    body = {
+        "name": name,
+        "current_elo": current_elo,
+    }
+
+    if birth_year is not None:
+        body["birth_year"] = birth_year
+
+    return _request("POST", "/players", body=body)
 
 def get_tournaments():
     return _request("GET", "/tournaments")

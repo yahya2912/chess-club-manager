@@ -133,3 +133,47 @@ def test_game_records_and_updates_elo_symmetrically(client, auth):
 
     assert _get_elo(white_id) == before_w
     assert _get_elo(black_id) == before_b
+
+def test_create_player_requires_key(client):
+    response = client.post(
+        "/players",
+        json={
+            "name": "Test Player",
+            "birth_year": 2000,
+            "current_elo": 1200,
+        },
+    )
+
+    assert response.status_code == 401
+
+
+def test_create_player_and_rating_history(client, auth):
+    response = client.post(
+        "/players",
+        headers=auth,
+        json={
+            "name": "Test Player",
+            "birth_year": 2000,
+            "current_elo": 1200,
+        },
+    )
+
+    assert response.status_code == 201
+
+    player = response.json()
+
+    assert player["name"] == "Test Player"
+    assert player["birth_year"] == 2000
+    assert player["current_elo"] == 1200
+
+    history = client.get(
+        f'/rating-history?player_id={player["id"]}',
+        headers=auth,
+    )
+
+    assert history.status_code == 200
+
+    rows = history.json()
+
+    assert len(rows) == 1
+    assert rows[0]["elo"] == 1200
