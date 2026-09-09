@@ -10,6 +10,7 @@ jobs:
   db-schema-test:
     name: Database schema + seed smoke test
     runs-on: ubuntu-latest
+
     services:
       postgres:
         image: postgres:16
@@ -24,6 +25,7 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -49,10 +51,23 @@ jobs:
           PLAYER_COUNT=$(psql -h localhost -U chess -d chessdb -tAc "SELECT COUNT(*) FROM player;")
           GAME_COUNT=$(psql -h localhost -U chess -d chessdb -tAc "SELECT COUNT(*) FROM game;")
           HISTORY_COUNT=$(psql -h localhost -U chess -d chessdb -tAc "SELECT COUNT(*) FROM rating_history;")
+
           echo "players=$PLAYER_COUNT games=$GAME_COUNT rating_history=$HISTORY_COUNT"
-          [ "$PLAYER_COUNT" -eq 6 ]   || { echo "expected 6 players, got $PLAYER_COUNT"; exit 1; }
-          [ "$GAME_COUNT" -eq 6 ]     || { echo "expected 6 games, got $GAME_COUNT"; exit 1; }
-          [ "$HISTORY_COUNT" -eq 18 ] || { echo "expected 18 rating_history rows, got $HISTORY_COUNT"; exit 1; }
+
+          [ "$PLAYER_COUNT" -eq 6 ] || {
+            echo "expected 6 players, got $PLAYER_COUNT"
+            exit 1
+          }
+
+          [ "$GAME_COUNT" -eq 6 ] || {
+            echo "expected 6 games, got $GAME_COUNT"
+            exit 1
+          }
+
+          [ "$HISTORY_COUNT" -eq 18 ] || {
+            echo "expected 18 rating_history rows, got $HISTORY_COUNT"
+            exit 1
+          }
 
       - name: Verify Elo symmetry (acceptance criterion)
         env:
@@ -62,20 +77,39 @@ jobs:
           psql -h localhost -U chess -d chessdb -tAc "
             SELECT bool_and(delta_sum = 0) FROM (
               SELECT rh1.player_id AS p1, rh2.player_id AS p2,
-                     (rh1.elo - lag(rh1.elo) OVER (PARTITION BY rh1.player_id ORDER BY rh1.valid_from))
-                     + (rh2.elo - lag(rh2.elo) OVER (PARTITION BY rh2.player_id ORDER BY rh2.valid_from)) AS delta_sum
+                     (rh1.elo - lag(rh1.elo) OVER (
+                       PARTITION BY rh1.player_id
+                       ORDER BY rh1.valid_from
+                     ))
+                     +
+                     (rh2.elo - lag(rh2.elo) OVER (
+                       PARTITION BY rh2.player_id
+                       ORDER BY rh2.valid_from
+                     )) AS delta_sum
               FROM rating_history rh1
-              JOIN game g ON g.white_id = rh1.player_id
-              JOIN rating_history rh2 ON rh2.player_id = g.black_id
-              WHERE rh1.valid_from = (SELECT max(valid_from) FROM rating_history rh WHERE rh.player_id = rh1.player_id)
-                AND rh2.valid_from = (SELECT max(valid_from) FROM rating_history rh WHERE rh.player_id = rh2.player_id)
-            ) x WHERE delta_sum IS NOT NULL;
+              JOIN game g
+                ON g.white_id = rh1.player_id
+              JOIN rating_history rh2
+                ON rh2.player_id = g.black_id
+              WHERE rh1.valid_from = (
+                SELECT max(valid_from)
+                FROM rating_history rh
+                WHERE rh.player_id = rh1.player_id
+              )
+              AND rh2.valid_from = (
+                SELECT max(valid_from)
+                FROM rating_history rh
+                WHERE rh.player_id = rh2.player_id
+              )
+            ) x
+            WHERE delta_sum IS NOT NULL;
           "
 
   pytest:
     name: pytest (API endpoint tests)
     runs-on: ubuntu-latest
     needs: db-schema-test
+
     services:
       postgres:
         image: postgres:16
@@ -90,22 +124,10 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Install psql client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
-
-      - name: Apply schema
-        env:
-          PGPASSWORD: chess
-        run: psql -h localhost -U chess -d chessdb -f db/01_schema.sql
-
-      - name: Apply seed data
-        env:
-          PGPASSWORD: chess
-        run: psql -h localhost -U chess -d chessdb -f db/02_seed.sql
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -125,20 +147,24 @@ jobs:
           POSTGRES_USER: chess
           POSTGRES_PASSWORD: chess
           POSTGRES_DB: chessdb
-          API_KEY: test-key
+          POSTGRES_TEST_DB: chessdb_test
+          TEST_API_KEY: test-key
         run: pytest tests -v
 
   docs:
     name: Compile LaTeX documentation
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Compile proposal.tex
         uses: xu-cheng/latex-action@v3
         with:
           root_file: proposal.tex
           working_directory: docs
+
       - name: Upload PDF artifact
         uses: actions/upload-artifact@v4
         with:
