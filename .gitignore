@@ -9,3 +9,10 @@ __pycache__/
 .DS_Store
 .pytest_cache/
 docs/proposal.pdf
+
+# Local environment
+.env
+
+# Debian build artifacts
+frontend/debian/*.deb
+frontend/debian/pkgroot/usr/lib/chess-club-manager/chess_club_fe/

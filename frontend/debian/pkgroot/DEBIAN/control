@@ -1,0 +1,12 @@
+Package: chess-club-manager
+Version: 1.0.0
+Section: utils
+Priority: optional
+Architecture: all
+Depends: python3 (>= 3.10), python3-tk
+Maintainer: Yahya <yahya@thga.de>
+Description: Chess Club Tournament & Rating Manager (frontend)
+ Desktop client for the Chess Club Manager REST API. Provides player
+ and standings views, rating history, and forms to record games and
+ register players. Talks to the API over HTTP; set CHESS_API_URL and
+ CHESS_API_KEY to point it at a running backend.

@@ -1,0 +1,3 @@
+#!/bin/sh
+export PYTHONPATH="/usr/lib/chess-club-manager:${PYTHONPATH}"
+exec python3 -m chess_club_fe.main "$@"
