@@ -1,8 +1,7 @@
-"""Tests for write endpoints (POST /registrations, POST /games) and Elo maths.
+"""Tests for write endpoints and Elo maths.
 
-Elo unit tests hit no database. Endpoint tests mutate data, so each cleans up
-the rows it creates and asserts on before/after deltas rather than absolute
-counts -- so they don't disturb the read-endpoint tests regardless of order.
+Elo unit tests hit no database. Endpoint tests mutate data and clean up after
+themselves so they don't disturb the read-endpoint tests regardless of order.
 """
 import psycopg
 
@@ -134,6 +133,7 @@ def test_game_records_and_updates_elo_symmetrically(client, auth):
     assert _get_elo(white_id) == before_w
     assert _get_elo(black_id) == before_b
 
+
 def test_create_player_requires_key(client):
     response = client.post(
         "/players",
@@ -177,3 +177,72 @@ def test_create_player_and_rating_history(client, auth):
 
     assert len(rows) == 1
     assert rows[0]["elo"] == 1200
+
+
+def test_create_tournament_requires_key(client):
+    response = client.post(
+        "/tournaments",
+        json={
+            "name": "Test Open",
+            "start_date": "2026-09-12",
+            "num_rounds": 4,
+        },
+    )
+    assert response.status_code == 401
+
+
+def test_create_tournament_creates_all_rounds(client, auth):
+    response = client.post(
+        "/tournaments",
+        headers=auth,
+        json={
+            "name": "Test Open",
+            "start_date": "2026-09-12",
+            "num_rounds": 4,
+        },
+    )
+
+    assert response.status_code == 201
+    tournament = response.json()
+
+    assert tournament["name"] == "Test Open"
+    assert tournament["start_date"] == "2026-09-12"
+    assert tournament["num_rounds"] == 4
+    assert tournament["status"] == "planned"
+    assert [r["round_no"] for r in tournament["rounds"]] == [1, 2, 3, 4]
+    assert all(isinstance(r["id"], int) for r in tournament["rounds"])
+
+    tournament_id = tournament["id"]
+
+    try:
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT round_no
+                    FROM round
+                    WHERE tournament_id = %s
+                    ORDER BY round_no
+                    """,
+                    (tournament_id,),
+                )
+                assert [row[0] for row in cur.fetchall()] == [1, 2, 3, 4]
+    finally:
+        with _connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM round WHERE tournament_id = %s", (tournament_id,))
+                cur.execute("DELETE FROM tournament WHERE id = %s", (tournament_id,))
+            conn.commit()
+
+
+def test_create_tournament_rejects_zero_rounds(client, auth):
+    response = client.post(
+        "/tournaments",
+        headers=auth,
+        json={
+            "name": "Broken Open",
+            "start_date": "2026-09-12",
+            "num_rounds": 0,
+        },
+    )
+    assert response.status_code == 422

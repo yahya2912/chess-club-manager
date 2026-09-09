@@ -18,7 +18,7 @@ class StandingsTab(ttk.Frame):
         self.tournament = ttk.Combobox(bar, state="readonly", width=40)
         self.tournament.pack(side="left", padx=6)
         self.tournament.bind("<<ComboboxSelected>>", lambda e: self.load())
-        ttk.Button(bar, text="Refresh", command=self.load).pack(side="left", padx=6)
+        ttk.Button(bar, text="Refresh", command=self.load_tournaments).pack(side="left", padx=6)
         self.status = ttk.Label(bar, text="")
         self.status.pack(side="left", padx=10)
 
@@ -33,22 +33,36 @@ class StandingsTab(ttk.Frame):
         self.load_tournaments()
 
     def load_tournaments(self):
-        """Populate the tournament dropdown."""
+        """Refresh the tournament dropdown and keep the current selection if possible."""
+        old_label = self.tournament.get()
+
         try:
             tournaments = api_client.get_tournaments()
         except api_client.ApiError as e:
             self.status.config(text=f"Error: {e.detail}")
             return
+
         self._id_by_label = {t["name"]: t["id"] for t in tournaments}
-        self.tournament["values"] = list(self._id_by_label.keys())
-        if tournaments:
+        values = list(self._id_by_label.keys())
+        self.tournament["values"] = values
+
+        if old_label in self._id_by_label:
+            self.tournament.set(old_label)
+        elif values:
             self.tournament.current(0)
-            self.load()
+        else:
+            self.tournament.set("")
+
+        self.load()
 
     def load(self):
         label = self.tournament.get()
         if not label:
+            for r in self.tree.get_children():
+                self.tree.delete(r)
+            self.status.config(text="0 players")
             return
+
         tid = self._id_by_label[label]
         try:
             rows = api_client.get_standings(tid)

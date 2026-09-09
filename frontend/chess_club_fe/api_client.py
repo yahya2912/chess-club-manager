@@ -44,6 +44,7 @@ def _request(method, path, params=None, body=None):
 def get_players():
     return _request("GET", "/players")
 
+
 def create_player(name, birth_year=None, current_elo=1000):
     body = {
         "name": name,
@@ -55,8 +56,17 @@ def create_player(name, birth_year=None, current_elo=1000):
 
     return _request("POST", "/players", body=body)
 
+
 def get_tournaments():
     return _request("GET", "/tournaments")
+
+
+def create_tournament(name, start_date, num_rounds):
+    return _request("POST", "/tournaments", body={
+        "name": name,
+        "start_date": start_date,
+        "num_rounds": num_rounds,
+    })
 
 
 def get_rating_history(player_id=None):
