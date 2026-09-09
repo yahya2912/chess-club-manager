@@ -41,27 +41,27 @@
 % ============================================================
 
 The project is a \textbf{Chess Club Tournament \& Rating Manager}: a small,
-self-hosted system that lets a chess club run Swiss-system tournaments, record
-game results, maintain Elo ratings over time and answer performance questions
-across a player's whole game history. Small clubs today typically juggle a
-spreadsheet for the member list, a second spreadsheet per tournament for the
-pairings and results, and no persistent record of ratings or openings played --
-which makes any resembling question (``how does player X score with Black
-in the Sicilian?'') practically unanswerable. Consolidating this into a single
-relational store solves that.
+self-hosted system for managing chess-club tournaments, registrations, game
+results, standings and Elo ratings in one persistent relational database.
+Instead of keeping member data, tournament data and rating changes in separate
+spreadsheets, the application stores the complete workflow centrally and keeps
+current ratings and their history consistent. The system deliberately focuses
+on tournament administration and rating management; automatic Swiss pairing
+generation and advanced player-opening statistics are outside the final scope.
 
 Two concrete usage scenarios illustrate the intended use:
 
 \begin{itemize}[topsep=2pt]
-  \item \textbf{Tournament director, Friday evening.} The director opens a new
-        four-round Swiss tournament, registers twelve players from the existing
-        member list, records the results of round~1 through the frontend and
-        prints the standings after each round. Elo ratings update automatically
-        when the tournament is closed.
-  \item \textbf{Club member, at home.} A player opens the frontend, points it
-        at the club server and looks up their personal statistics: overall
-        win/draw/loss counts, score by colour, score per opening and Elo
-        progression over the last twelve months.
+  \item \textbf{Tournament director, Friday evening.} The director creates a
+        tournament and specifies its number of rounds. The system automatically
+        creates the corresponding round records, after which the director
+        registers players, records game results and views the standings with
+        points and Buchholz tiebreak values. Elo ratings are recalculated and
+        stored immediately whenever a legal game result is recorded.
+  \item \textbf{Club member or director, later.} The user opens the desktop
+        frontend and reviews the current player list and Elo values, selects a
+        player in the rating-history view and follows the stored Elo progression
+        over time.
 \end{itemize}
 
 % ============================================================
@@ -92,7 +92,9 @@ final rank. Every \texttt{game} connects two players (white and black),
 belongs to exactly one round, and uses exactly one opening.
 The relationship
 \emph{tournament~$\rightarrow$~round~$\rightarrow$~game} is a strict 1:N chain,
-and \emph{player~$\rightarrow$~rating\_history} is 1:N as well.
+and \emph{player~$\rightarrow$~rating\_history} is 1:N as well. In the final
+implementation, creating a tournament also creates round numbers
+\texttt{1..num\_rounds} in the same backend transaction.
 
 % ============================================================
 \section{From model to schema}
@@ -137,52 +139,58 @@ dependencies, so the schema is in \textbf{3NF}.
 % ============================================================
 \section{API design}
 % ============================================================
-The FastAPI layer exposes read endpoints for public statistics and standings and
-write endpoints (protected by \texttt{X-API-Key}) for anything that mutates
-club data.
+The FastAPI layer exposes four read and four write endpoints for the application.
+All application endpoints require the configured \texttt{X-API-Key}; the
+separate \texttt{GET /health} endpoint remains unauthenticated so service
+availability can be checked independently.
 
 \renewcommand{\arraystretch}{1.2}
 \begin{tabularx}{\linewidth}{@{}p{1.6cm}p{4.6cm}X@{}}
 \toprule
 \textbf{Method} & \textbf{Path} & \textbf{Purpose} \\
 \midrule
-\texttt{GET}  & \texttt{/players}                              & list of players with total games played, computed as \texttt{COUNT(*)} over \texttt{game} where the player appears as \texttt{white\_id} or \texttt{black\_id} (\emph{JOIN + aggregation}) \\
-\texttt{GET}  & \texttt{/players/\{id\}/stats}                 & win/draw/loss and average Elo delta grouped by \texttt{opening.name} (\emph{JOIN game~$\bowtie$~opening + aggregation}) \\
-\texttt{GET}  & \texttt{/tournaments}                          & list of all tournaments \\
-\texttt{GET}  & \texttt{/tournaments/\{id\}/standings}         & points per player + Buchholz tiebreak (\emph{JOIN across 4 tables + aggregation}) \\
-\texttt{POST} & \texttt{/players}                              & create a new player (\emph{X-API-Key}) \\
-\texttt{POST} & \texttt{/tournaments}                          & create a new tournament (\emph{X-API-Key}) \\
-\texttt{POST} & \texttt{/tournaments/\{id\}/registrations}     & register a player (\emph{X-API-Key}) \\
-\texttt{POST} & \texttt{/games}                                & record a game result, triggers Elo update (\emph{X-API-Key}) \\
+\texttt{GET}  & \texttt{/players}                              & list all players with name, birth year and current Elo \\
+\texttt{GET}  & \texttt{/rating-history}                       & list Elo-history rows, optionally filtered by \texttt{player\_id} \\
+\texttt{GET}  & \texttt{/tournaments}                          & list all tournaments \\
+\texttt{GET}  & \texttt{/standings?tournament\_id=\{id\}}      & tournament standings with points, wins/draws/losses, games played and Buchholz tiebreak (\emph{JOIN + aggregation}) \\
+\texttt{POST} & \texttt{/players}                              & create a player and initial rating-history row \\
+\texttt{POST} & \texttt{/tournaments}                          & create a tournament and all numbered rounds atomically \\
+\texttt{POST} & \texttt{/registrations}                        & register a player for a tournament with optional seed \\
+\texttt{POST} & \texttt{/games}                                & record a game result and update both Elo ratings and rating history \\
 \bottomrule
 \end{tabularx}
 
-The signature endpoint is \texttt{GET /tournaments/\{id\}/standings}: it JOINs
-\texttt{registration} to \texttt{player} on \texttt{player\_id}, and
-\texttt{game} to \texttt{round} on \texttt{round\_id} (filtered by
-\texttt{round.tournament\_id}), then groups by player to compute
-\texttt{SUM(points)} plus the Buchholz sum of the opponents' scores. All four
-\texttt{POST} endpoints require the \texttt{X-API-Key} header.
+The signature read endpoint is \texttt{GET /standings?tournament\_id=\{id\}}.
+Its SQL query combines registrations, players, rounds and games, computes points
+from recorded results and adds a full Buchholz value based on opponents' scores.
+The main transactional write endpoint is \texttt{POST /games}: it validates the
+players and tournament registration, inserts the game, calculates both new Elo
+values with a fixed K-factor, updates \texttt{player.current\_elo} and appends
+one \texttt{rating\_history} row per player. Tournament creation is also
+transactional and inserts all required round rows together with the tournament.
 
 % ============================================================
 \section{Frontend prototype (hand sketches)}
 % ============================================================
 
 The frontend is a \textbf{Python/tkinter} desktop application, packaged as a
-\texttt{.deb} installer as required, and asking for the API URL and
-\texttt{X-API-Key} in a connection dialog at startup. tkinter is chosen because
-it ships with the Python standard library and packages cleanly into a Debian archive.
+\texttt{.deb} installer as required. The API URL and \texttt{X-API-Key} are read
+from environment configuration rather than entered in a startup dialog. The
+final application uses six tabs: \emph{Players}, \emph{Standings},
+\emph{Rating History}, \emph{Record Game}, \emph{Register Player} and
+\emph{Create Tournament}. tkinter is chosen because it ships with the Python
+standard library and packages cleanly into a Debian archive.
 
 \begin{figure}[ht]
 \centering
 \begin{minipage}[t]{0.47\linewidth}\centering
   \includegraphics[width=\linewidth]{assets/figure_2.png}
-  \captionof{figure}{Startup connection dialog: API URL + X-API-Key.}
+  \captionof{figure}{Early connection-dialog sketch from the planning phase; final configuration is environment-based.}
   \label{fig:fe-connect}
 \end{minipage}\hfill
 \begin{minipage}[t]{0.47\linewidth}\centering
   \includegraphics[width=\linewidth]{assets/figure_3.png}
-  \captionof{figure}{Standings screen: table of players, calls \texttt{GET /tournaments/\{id\}/standings}.}
+  \captionof{figure}{Standings prototype; final implementation calls \texttt{GET /standings?tournament\_id=\{id\}}.}
   \label{fig:fe-main}
 \end{minipage}
 
@@ -190,50 +198,49 @@ it ships with the Python standard library and packages cleanly into a Debian arc
 
 \begin{minipage}[t]{0.47\linewidth}\centering
   \includegraphics[width=\linewidth]{assets/figure_4.png}
-  \captionof{figure}{Record-game form: white, black, opening, result -- calls \texttt{POST /games}.}
+  \captionof{figure}{Record-game prototype: round, white, black, opening and result -- calls \texttt{POST /games}.}
   \label{fig:fe-detail}
 \end{minipage}\hfill
 \begin{minipage}[t]{0.47\linewidth}\centering
   \includegraphics[width=\linewidth]{assets/figure_5.png}
-  \captionof{figure}{Player-stats screen: calls \texttt{GET /players/\{id\}/stats}.}
+  \captionof{figure}{Early player-statistics sketch; final implementation uses a dedicated Elo Rating History tab instead.}
   \label{fig:fe-second}
 \end{minipage}
 \end{figure}
 
-Figures~\ref{fig:fe-connect}--\ref{fig:fe-second} show the four screens of the
-prototype. Figure~\ref{fig:fe-connect} shows the connection dialog that
-collects the API URL and \texttt{X-API-Key} at startup and stores them in the
-running session. Figure~\ref{fig:fe-main} shows the standings screen, the main
-list view of the application, which reads from
-\texttt{GET /tournaments/\{id\}/standings} and refreshes on demand.
-Figure~\ref{fig:fe-detail} shows the record-game form used by the tournament
-director to enter a result; it calls \texttt{POST /games} with the
-\texttt{X-API-Key} header. Figure~\ref{fig:fe-second} shows the player-stats
-screen, which reads \texttt{GET /players/\{id\}/stats} and renders the
-win/draw/loss breakdown per opening.
+Figures~\ref{fig:fe-connect}--\ref{fig:fe-second} are retained as the original
+planning sketches. During implementation the interface was simplified into a
+single six-tab tkinter window. The \emph{Players} tab lists players and creates
+new ones; \emph{Create Tournament} creates a tournament and displays the
+new round IDs; \emph{Register Player} connects players to tournaments;
+\emph{Record Game} records results; \emph{Standings} displays the calculated
+ranking; and \emph{Rating History} displays all Elo-history rows or filters
+them by player. Successful writes refresh the relevant read views so newly
+created players and tournaments become selectable without restarting the GUI.
 
 % ============================================================
 \section{Operation with Docker Compose}
 % ============================================================
 
-The \texttt{docker-compose.yml} defines two services: \texttt{postgres}
-(official \texttt{postgres:16} image, with the schema and seed data mounted as
-an init script under \texttt{/docker-entrypoint-initdb.d}) and \texttt{api}
-(the FastAPI application, built from a local \texttt{Dockerfile}). Credentials
--- \texttt{POSTGRES\_USER}, \texttt{POSTGRES\_PASSWORD}, \texttt{POSTGRES\_DB}
-and \texttt{API\_KEY} -- live in a \texttt{.env} file that is
-\texttt{.gitignore}-d. Deployment on the lecture server is one
-step: clone the repository, place \texttt{.env} beside the compose file and run
-\texttt{docker compose up -d}. The frontend \texttt{.deb} is installed
-separately on the same server via \texttt{sudo dpkg -i chess-club-fe.deb} and
-connects to the API over HTTP.
+The active \texttt{docker-compose.yml} service is \texttt{postgres}, using the
+official \texttt{postgres:16} image with persistent storage and the configured
+database credentials. The FastAPI application is started locally with Uvicorn
+from the Python environment and connects to PostgreSQL using values from the
+\texttt{.env} configuration. The repository includes \texttt{scripts/run-local.sh}
+to load the environment, start PostgreSQL, start the API and then launch the
+tkinter frontend. The frontend can also be built as a Debian package and
+installed separately. This separation keeps the database reproducible through
+Docker while allowing the Python API and desktop GUI to run directly on the
+host system.
 
 % ============================================================
 \section{Scope, milestones and risks}
 % ============================================================
 
-\textbf{Scope.} 7 tables, 8 endpoints (4 read, 4 write), 4 tkinter screens plus
-the connection dialog.
+\textbf{Scope.} 7 tables, 8 application endpoints (4 read, 4 write) plus the
+health endpoint, and a 6-tab tkinter frontend. Automatic Swiss pairing,
+player-opening analytics, user accounts, edit/delete workflows and tournament
+closing are explicitly outside the final scope.
 
 \textbf{Milestones and schedule.}
 
@@ -242,19 +249,19 @@ the connection dialog.
 \toprule
 \textbf{Week} & \textbf{Milestone} & \textbf{Est. hours} \\
 \midrule
-1     & Schema, DDL, seed data (players + one closed tournament) ready in PostgreSQL & 8 \\
-2--3  & FastAPI: read + write endpoints, \texttt{X-API-Key} dependency, standings query with JOIN + aggregation & 12 \\
-4--5  & tkinter frontend (4 screens + connection dialog); \texttt{.deb} builds and installs on the lecture server & 10 \\
-6     & \texttt{pytest} test suite, documentation (LaTeX repo with CI), 8--10 min video & 10 \\
+1     & Schema, DDL and seed data ready in PostgreSQL, including all seven final tables and constraints & 8 \\
+2--3  & FastAPI read/write endpoints, \texttt{X-API-Key} dependency, standings/Buchholz query and Elo business logic & 12 \\
+4--5  & tkinter frontend with six final tabs, local launcher and \texttt{.deb} packaging & 10 \\
+6     & \texttt{pytest} and database smoke tests, LaTeX documentation with CI, and 8--10 min demonstration video & 10 \\
 \bottomrule
 \end{tabularx}
 
 \textbf{Risks.} (1)~The Elo update on \texttt{POST /games} is a small business
-rule with real edge cases (both players' ratings must move symmetrically, and
-recording a game against an unregistered player must be refused). Getting this
-subtly wrong is the most likely way to fail correctness tests.
-(2)~Packaging the tkinter frontend as a working \texttt{.deb} on the lecture
-server is a build-system risk unrelated to the database itself.
+rule with real edge cases: both players' ratings must move symmetrically and
+recording a game against an unregistered player must be refused. These cases
+are therefore covered directly by automated tests.
+(2)~Packaging the tkinter frontend as a working \texttt{.deb} remains a
+build-system concern separate from the relational database itself.
 
 % ============================================================
 \section{Acceptance criteria and testing}
@@ -266,18 +273,17 @@ lecture server, verified by an automated test suite.
 \textbf{Acceptance criteria.}
 \begin{itemize}[topsep=2pt]
   \item A \texttt{POST /games} with \texttt{white\_id = black\_id} is rejected
-        with HTTP~400 (\textsc{check} constraint).
+        with HTTP~400.
   \item A \texttt{POST /games} whose \texttt{result} is not in
         \texttt{\{'1-0','0-1','1/2-1/2'\}} is rejected with HTTP~400.
   \item Registering the same player twice for the same tournament is rejected
         with HTTP~409 (primary key on \texttt{registration}).
   \item Recording a game for a player who is not registered in that
         tournament is rejected with HTTP~409.
-  \item \texttt{GET /tournaments/\{id\}/standings} returns the correct
-        \texttt{SUM(points)} per player and Buchholz tiebreak (JOIN +
-        aggregation).
-  \item Every \texttt{POST} endpoint without a valid \texttt{X-API-Key}
-        returns HTTP~401.
+  \item \texttt{GET /standings?tournament\_id=\{id\}} returns the correct
+        points per player and Buchholz tiebreak using JOINs and aggregation.
+  \item Every protected application endpoint without a valid
+        \texttt{X-API-Key} returns HTTP~401; \texttt{GET /health} remains public.
 \end{itemize}
 
 \textbf{Test plan.}
@@ -287,16 +293,18 @@ lecture server, verified by an automated test suite.
         \texttt{registration}, \texttt{rating\_history}, \textsc{unique} on
         \texttt{(tournament\_id, round\_no)}, \textsc{check} on
         \texttt{game.result} and on \texttt{white\_id $\neq$ black\_id},
-        \textsc{not null} on all foreign keys.
+        \textsc{not null} on all foreign keys; CI also applies schema and seed
+        data to PostgreSQL~16 and verifies expected row counts.
   \item \textbf{API:} \texttt{pytest} with FastAPI's \texttt{TestClient}
-        against a throw-away PostgreSQL container. Happy paths
-        for all four \texttt{GET} endpoints and all four \texttt{POST}
-        endpoints, plus 4xx error cases for each acceptance criterion above.
-  \item \textbf{Business rule (risk 1).} Dedicated test that records a game
-        for a player \emph{not} registered in the tournament and asserts
-        HTTP~409; a second test records a legal game and asserts that both
-        players' Elo values change symmetrically and that a
-        \texttt{rating\_history} row is written for each.
+        against an isolated PostgreSQL test database. Happy paths cover the
+        implemented read and write endpoints, including player creation,
+        tournament creation with automatic rounds, registration, game recording,
+        rating-history filtering and standings, plus the documented 4xx cases.
+  \item \textbf{Business rule (risk 1).} Dedicated tests assert HTTP~409 for an
+        unregistered player; a legal game must update both players' Elo values
+        symmetrically and write one \texttt{rating\_history} row for each.
+        Tournament-creation tests also verify that exactly the requested numbered
+        rounds are created and that zero rounds is rejected.
 \end{itemize}
 
 \vspace{1em}
