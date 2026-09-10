@@ -5,7 +5,6 @@
 \usepackage{lmodern}
 \usepackage{hyperref}
 \usepackage{booktabs}
-\usepackage{array}
 \usepackage{enumitem}
 \setlist{noitemsep,topsep=4pt}
 \setlength{\parindent}{0pt}
@@ -17,129 +16,96 @@
 
 \begin{document}
 \maketitle
+\tableofcontents
 \newpage
 
 \section{System Architecture}
-The application uses a three-layer architecture:
 \begin{verbatim}
-tkinter frontend -> FastAPI backend -> PostgreSQL 16
+tkinter desktop frontend (.deb)
+        -> HTTP + X-API-Key
+FastAPI container
+        -> psycopg
+PostgreSQL 16 container
 \end{verbatim}
-The frontend communicates with the backend using HTTP and the \texttt{X-API-Key} header. Database access is handled by \texttt{psycopg}. PostgreSQL is started with Docker Compose for local development.
-
-Important repository areas are:
-\begin{verbatim}
-api/                    FastAPI application and tests
-db/                     PostgreSQL schema and seed data
-frontend/chess_club_fe/ tkinter frontend
-frontend/debian/        Debian package files
-docs/                   proposal and manuals
-scripts/                local helper scripts
-.github/workflows/      GitHub Actions CI
-\end{verbatim}
+Docker Compose orchestrates both backend services. The frontend is not containerized and never accesses PostgreSQL directly. At startup it asks for the API URL and \texttt{X-API-Key}; these values are used for the current process.
 
 \section{Database Model}
-The schema in \texttt{db/01\_schema.sql} contains seven tables.
+The schema in \texttt{db/01\_schema.sql} contains seven tables: \texttt{player}, \texttt{opening}, \texttt{tournament}, \texttt{registration}, \texttt{round}, \texttt{game}, and \texttt{rating\_history}.
 
-\begin{center}
-\begin{tabular}{ll}
-\toprule
-\textbf{Table} & \textbf{Purpose} \\
-\midrule
-player & player data and current Elo \\
-opening & ECO opening reference data \\
-tournament & tournament metadata and status \\
-registration & players registered for tournaments \\
-round & rounds belonging to tournaments \\
-game & recorded games and results \\
-rating\_history & historical Elo values \\
-\bottomrule
-\end{tabular}
-\end{center}
+Important integrity rules include primary and foreign keys, the composite registration key \texttt{(player\_id,tournament\_id)}, unique tournament round numbers, valid result values, distinct White/Black players, and controlled tournament status values. \texttt{db/02\_seed.sql} contains deterministic reference/sample data used by CI.
 
-Important integrity rules are enforced in the database itself: primary keys and foreign keys, unique tournament round numbers, a composite registration key, valid game results, distinct White/Black players, and valid tournament status values. Indexes support common lookups for games, registrations and rating history.
+\section{Backend API and Business Logic}
+The FastAPI entry point is \texttt{api/app/main.py}. \texttt{/health} is public; application routes require \texttt{X-API-Key}. The API supports players, tournaments, registrations, games, rating history, and standings.
 
-\texttt{db/02\_seed.sql} contains deterministic sample data used by CI and must remain compatible with the automated checks.
+Multi-row writes are transactional. Player creation writes the player and first history row. Tournament creation writes the tournament and all rounds. Game recording validates the round and registrations, inserts the game, updates both Elo values, and inserts two history rows; errors roll the transaction back.
 
-\section{Backend and Core Logic}
-The FastAPI entry point is \texttt{api/app/main.py}. The application provides player, tournament, registration, game, rating-history and standings routes. \texttt{/health} is public; application routes require a valid \texttt{X-API-Key}.
-
-Write operations are transactional. Creating a player also creates its first rating-history row. Creating a tournament creates all round rows. Recording a game inserts the game, updates both Elo values and adds two history rows in one transaction. Errors cause a rollback.
-
-\subsection{Elo}
-Elo calculation is isolated in \texttt{api/app/elo.py} with a fixed K-factor of 20.
-\begin{verbatim}
-E = 1 / (1 + 10^((opponent_rating - rating) / 400))
-new = old + round(20 * (actual_score - expected_score))
-\end{verbatim}
-Ratings are updated immediately after each successfully recorded game.
-
-\subsection{Standings and Buchholz}
-Standings are calculated with SQL common table expressions. A win is 1 point, a draw 0.5 and a loss 0. Buchholz is the sum of all opponents' tournament points. Ordering is by points, Buchholz, wins and then player name.
+Elo calculation is isolated in \texttt{api/app/elo.py} with K=20. Standings use SQL common table expressions. A win is 1 point, a draw 0.5, and a loss 0. Full Buchholz is the sum of opponents' tournament points.
 
 \section{Frontend}
-The tkinter frontend contains six tabs: Players, Standings, Rating History, Record Game, Register Player and Create Tournament. \texttt{api\_client.py} is the HTTP client and automatically adds the API key.
+The tkinter frontend contains six tabs: Players, Standings, Rating History, Record Game, Register Player, and Create Tournament.
 
-After successful writes, refresh callbacks reload dependent views so the user can see new players, tournaments, Elo values and standings without restarting the GUI.
+\texttt{api\_client.py} is the frontend HTTP layer. \texttt{main.py} first opens a startup connection dialog for API URL and key, validates the connection by calling the API, and then shows the main window. Successful writes refresh dependent read views.
 
-\section{Build, Run and Test}
-Create configuration from \texttt{.env.example}. For local Python development:
+\section{Build, Run and Package}
+Create configuration and start the backend:
+\begin{verbatim}
+cp .env.example .env
+docker compose up -d --build
+curl http://127.0.0.1:8000/health
+\end{verbatim}
+Start the source frontend:
+\begin{verbatim}
+PYTHONPATH="$PWD/frontend" python3 -m chess_club_fe.main
+\end{verbatim}
+For Debian packaging:
+\begin{verbatim}
+sh frontend/debian/build-deb.sh
+\end{verbatim}
+The generated package is \texttt{frontend/debian/chess-club-manager\_1.0.0\_all.deb}. The installed frontend uses the same startup connection dialog; the backend remains in Docker Compose.
+
+\section{Tests, CI and Documentation Build}
+For local API tests:
 \begin{verbatim}
 python3 -m venv api/.venv
 api/.venv/bin/pip install -r api/requirements.txt
 api/.venv/bin/pip install -r api/requirements-dev.txt
-docker compose up -d postgres
-\end{verbatim}
-On Linux the local helper can then be used:
-\begin{verbatim}
-./scripts/run-local.sh
-\end{verbatim}
-
-Run API tests with:
-\begin{verbatim}
 cd api
-pytest tests -v
+.venv/bin/pytest tests -v
 \end{verbatim}
-
-GitHub Actions runs three checks on pushes and pull requests to \texttt{main}: database schema/seed smoke testing, pytest API tests, and LaTeX document compilation.
-
-The Debian frontend package is built on a Debian-based system with:
+Build all documentation PDFs with:
 \begin{verbatim}
-sh frontend/debian/build-deb.sh
+make all
 \end{verbatim}
-The generated package is \texttt{frontend/debian/chess-club-manager\_1.0.0\_all.deb}.
+The Makefile writes the proposal, User Manual, and Developer Manual PDFs to \texttt{out/}.
+
+GitHub Actions verifies the database schema and seed, API tests, Docker Compose startup of PostgreSQL + FastAPI, Debian package creation, and Makefile-driven LaTeX builds. On a pushed version tag matching \texttt{v*}, CI creates a GitHub Release and attaches the generated PDFs.
 
 \section{How to Add a New Function}
-A new feature should follow the existing layers instead of bypassing them. A safe extension workflow is:
-
+A new feature should follow the existing layers:
 \begin{enumerate}
-    \item \textbf{Decide whether the database must change.} If new persistent data is needed, update the schema carefully and preserve existing primary keys, foreign keys, checks and indexes.
-    \item \textbf{Add or extend a FastAPI route.} Keep validation in Pydantic/backend logic and use the existing database connection helper. Application-data routes should use the API-key dependency.
-    \item \textbf{Use transactions for multi-step writes.} If one user action changes several rows, all changes should either succeed together or roll back together.
-    \item \textbf{Extend the frontend HTTP client.} Add the required request method in \texttt{api\_client.py} instead of making database calls from the GUI.
-    \item \textbf{Add the GUI control or tab.} Keep the tkinter layer focused on user input, messages and displaying API results.
-    \item \textbf{Refresh affected views.} Reuse or extend the refresh callback pattern when the new write affects existing read screens.
-    \item \textbf{Add automated tests.} Test successful behavior, authentication and important invalid cases. Database changes should also remain compatible with CI schema/seed checks.
-    \item \textbf{Run the full test suite and CI.} A feature is not finished until the existing tests still pass.
-    \item \textbf{Update documentation.} Describe the new user behavior and any new developer/configuration requirements.
+  \item Decide whether persistent data or schema changes are required; preserve keys, constraints, and indexes.
+  \item Add or extend a FastAPI route and reuse the API-key dependency for application data.
+  \item Use a transaction whenever one action changes multiple rows.
+  \item Extend \texttt{frontend/chess\_club\_fe/api\_client.py}; never access PostgreSQL from tkinter.
+  \item Add the GUI control or tab and refresh affected views after writes.
+  \item Add tests for success, authentication, and important invalid cases.
+  \item Run pytest, Compose smoke testing, packaging, and documentation CI.
+  \item Update the User Manual, Developer Manual, and README.
 \end{enumerate}
 
-Example: adding a tournament-close feature would likely require a backend route, validation of the current tournament state, a frontend action, API-client method, tests for allowed/disallowed transitions, and documentation. It should not directly modify PostgreSQL from tkinter.
+A tournament-close feature, for example, would require a backend state transition, frontend API-client method, GUI action, tests for allowed/disallowed transitions, and documentation.
 
 \section{Possible Future Extensions}
-With additional development time, reasonable extensions include:
-\begin{itemize}
-    \item tournament status controls and closing workflow;
-    \item edit/delete operations with safe validation;
-    \item automatic pairing generation;
-    \item richer player statistics and opening analytics;
-    \item improved round selection instead of entering raw round IDs;
-    \item stronger deployment packaging for macOS and Windows;
-    \item user accounts and role-based authorization.
-\end{itemize}
+Reasonable future work includes tournament closing controls, edit/delete workflows, automatic pairing generation, richer opening/player analytics, improved round selection, and role-based users. These are intentionally outside the delivered scope.
 
-These are intentionally outside the delivered scope and should be added only without weakening database integrity or the existing tested workflow.
+\section{Reflection}
+Separating the database, API, and GUI made the project easier to test and reason about: database constraints can be verified independently, API behavior can be tested before GUI work, and frontend code does not contain SQL. The most consistency-sensitive operation is game recording because one user action affects the game table, two current Elo values, and two history rows; the transaction prevents partial updates.
 
-\section{Developer Checklist}
-Before accepting a change, verify that database constraints still hold, API authentication is preserved, multi-row writes are transactional, tests cover the behavior, CI passes, and the manuals/README describe the actual implementation rather than planned features.
+The deployment model also became part of the design. Containerizing PostgreSQL and FastAPI together makes the backend reproducible, while keeping the tkinter frontend outside Docker matches the required desktop installation model.
+
+\section{Sources and Reuse}
+Course patterns were reused and adapted where appropriate, especially the PostgreSQL/FastAPI separation, \texttt{X-API-Key} protection, Docker Compose backend structure, and tkinter frontend approach. These follow the DBMS lecture/exercise material around FastAPI, Docker Compose, API-key protection, and frontend packaging. Project-specific schema design, Elo logic, standings/Buchholz queries, tournament workflow, tests, and documentation were developed for this chess-club application.
+
+Any future third-party code should be documented with its exact source and the parts that were adapted.
 
 \end{document}
