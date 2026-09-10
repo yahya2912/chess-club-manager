@@ -1,0 +1,248 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=2.3cm]{geometry}
+\usepackage{lmodern}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+
+\setlist{noitemsep,topsep=4pt}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt}
+
+\title{Chess Club Tournament \& Rating Manager\\User Manual}
+\author{Yahya El Idrissi\\THGA Bochum -- Introduction to Database Management Systems}
+\date{September 2026}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+\section{Overview}
+
+The \textbf{Chess Club Tournament \& Rating Manager} is a desktop application for managing players, tournaments, game results and Elo ratings in a small chess club.
+
+The application supports the following tasks:
+\begin{itemize}
+    \item create players;
+    \item create tournaments and their rounds;
+    \item register players for tournaments;
+    \item record game results;
+    \item update Elo ratings automatically;
+    \item view rating history;
+    \item view tournament standings with Buchholz tiebreaks.
+\end{itemize}
+
+The main window contains six tabs: \textbf{Players}, \textbf{Standings}, \textbf{Rating History}, \textbf{Record Game}, \textbf{Register Player}, and \textbf{Create Tournament}.
+
+The usual workflow is:
+
+\begin{center}
+\textbf{Create players $\rightarrow$ Create tournament $\rightarrow$ Register players $\rightarrow$ Record games $\rightarrow$ Check standings and rating history}
+\end{center}
+
+\section{Setup and Startup}
+
+\subsection{Requirements}
+
+Install the following before running the application from source:
+\begin{itemize}
+    \item Docker Desktop or Docker Engine with Docker Compose;
+    \item Python 3;
+    \item Git, if the repository must be cloned.
+\end{itemize}
+
+Create a file named \texttt{.env} in the repository root using \texttt{.env.example} as the template. The frontend API key must match the backend \texttt{API\_KEY}.
+
+For a first source-based setup, create the API virtual environment and install the dependencies.
+
+\textbf{Linux / macOS:}
+\begin{verbatim}
+python3 -m venv api/.venv
+api/.venv/bin/pip install -r api/requirements.txt
+\end{verbatim}
+
+\textbf{Windows PowerShell:}
+\begin{verbatim}
+py -m venv api/.venv
+.\api\.venv\Scripts\pip install -r api\requirements.txt
+\end{verbatim}
+
+\subsection{Linux (Debian / Ubuntu)}
+
+Linux is the main target environment. From the repository root, the easiest startup method is:
+
+\begin{verbatim}
+./scripts/run-local.sh
+\end{verbatim}
+
+The script starts PostgreSQL, FastAPI and the tkinter frontend.
+
+If the Debian frontend package is installed, the frontend can also be launched with:
+
+\begin{verbatim}
+chess-club-manager
+\end{verbatim}
+
+In this case, PostgreSQL and the API must already be running.
+
+\subsection{macOS}
+
+On macOS, start the components manually.
+
+\textbf{Terminal 1:}
+\begin{verbatim}
+cd /path/to/chess-club-manager
+docker compose up -d postgres
+set -a
+source .env
+set +a
+api/.venv/bin/uvicorn app.main:app \
+  --app-dir api --host 127.0.0.1 --port 8000
+\end{verbatim}
+
+Keep this terminal open. Then open a second terminal:
+
+\begin{verbatim}
+cd /path/to/chess-club-manager
+export CHESS_API_URL="http://127.0.0.1:8000"
+export CHESS_API_KEY="$(grep '^API_KEY=' .env | cut -d= -f2-)"
+PYTHONPATH="$PWD/frontend" python3 -m chess_club_fe.main
+\end{verbatim}
+
+\subsection{Windows}
+
+On Windows, use PowerShell and Docker Desktop.
+
+\textbf{PowerShell 1:}
+\begin{verbatim}
+cd C:\path\to\chess-club-manager
+docker compose up -d postgres
+$env:POSTGRES_USER="chess"
+$env:POSTGRES_PASSWORD="change-me"
+$env:POSTGRES_DB="chessdb"
+$env:POSTGRES_PORT="5432"
+$env:API_KEY="change-me"
+.\api\.venv\Scripts\uvicorn app.main:app \
+  --app-dir api --host 127.0.0.1 --port 8000
+\end{verbatim}
+
+Use the same values as in \texttt{.env}. Keep this window open.
+
+\textbf{PowerShell 2:}
+\begin{verbatim}
+cd C:\path\to\chess-club-manager
+$env:CHESS_API_URL="http://127.0.0.1:8000"
+$env:CHESS_API_KEY="change-me"
+$env:PYTHONPATH="$PWD\frontend"
+py -m chess_club_fe.main
+\end{verbatim}
+
+\subsection{Quick backend check}
+
+Before opening the GUI, open the following address in a browser:
+
+\begin{verbatim}
+http://127.0.0.1:8000/health
+\end{verbatim}
+
+A working backend returns:
+
+\begin{verbatim}
+{"status":"ok"}
+\end{verbatim}
+
+\section{Using the Application}
+
+\subsection{Players}
+
+Open \textbf{Players} to view existing players. Click \textbf{Add Player} to create one. Enter a name, optional birth year and initial Elo. The default Elo is 1000. Creating a player also creates the first rating-history entry automatically.
+
+\subsection{Create Tournament}
+
+Open \textbf{Create Tournament}, enter a name, a start date in \texttt{YYYY-MM-DD} format and the number of rounds. The application creates the tournament and all required round records automatically.
+
+After creation, the generated round IDs are shown, for example:
+
+\begin{verbatim}
+Rounds: R1=#1, R2=#2
+\end{verbatim}
+
+Keep these IDs because \textbf{Record Game} requires the database round ID.
+
+\subsection{Register Player}
+
+Open \textbf{Register Player}, choose a player and tournament, optionally enter a seed and click \textbf{Register}. Both players must be registered before their game can be recorded. A player cannot be registered twice for the same tournament.
+
+\subsection{Record Game}
+
+Open \textbf{Record Game} and enter the round ID, White player, Black player, ECO code and result. Valid results are \texttt{1-0}, \texttt{0-1}, and \texttt{1/2-1/2}.
+
+A successful game immediately updates both Elo ratings and creates two new rating-history entries.
+
+The supplied ECO reference data contains:
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Code} & \textbf{Opening} \\
+\midrule
+A00 & Irregular Opening \\
+B01 & Scandinavian Defense \\
+C00 & French Defense \\
+C50 & Italian Game \\
+D02 & London System \\
+E60 & King's Indian Defense \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Standings and Rating History}
+
+Open \textbf{Standings} and choose a tournament to see points, Buchholz, wins, draws, losses and games played.
+
+Open \textbf{Rating History} to view Elo values over time. The dropdown can show all players or one selected player.
+
+\section{Functional Verification}
+
+The following short test checks the main functions from the user's perspective.
+
+\begin{center}
+\begin{tabular}{>{\raggedright\arraybackslash}p{3.4cm} >{\raggedright\arraybackslash}p{5.0cm} >{\raggedright\arraybackslash}p{5.0cm}}
+\toprule
+\textbf{Function} & \textbf{Test} & \textbf{Expected / Evaluation} \\
+\midrule
+Create player & Add Alice with Elo 1500 & Player appears and an initial history entry is created. \\
+Create tournament & Create Club Open with one round & Tournament appears and one round ID is generated. \\
+Register player & Register Alice and Bob & Both registrations succeed; duplicates are rejected. \\
+Record game & Alice beats Bob using a valid round and ECO code & Game is saved and both Elo values change immediately. \\
+Rating history & Open Alice in Rating History & Initial and updated Elo values are visible. \\
+Standings & Open Club Open & Points, results and Buchholz are displayed. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+If these checks succeed, the complete core workflow is functioning correctly from the user's perspective.
+
+\section{Troubleshooting and Scope}
+
+\textbf{Cannot reach the API:} make sure FastAPI is running and check \texttt{http://127.0.0.1:8000/health}.
+
+\textbf{Unauthorized / invalid API key:} make sure \texttt{CHESS\_API\_KEY} used by the frontend matches \texttt{API\_KEY} used by the backend.
+
+\textbf{Docker command fails:} make sure Docker Desktop or Docker Engine is running.
+
+\textbf{Player not registered:} register both players for the tournament before recording their game.
+
+\textbf{Unknown round ID:} use one of the round IDs shown when the tournament was created.
+
+\textbf{Unknown ECO code:} use one of the ECO codes listed in this manual.
+
+The delivered version intentionally does not include automatic pairing generation, edit/delete operations through the GUI, automatic tournament closing, user accounts or detailed opening statistics.
+
+\end{document}

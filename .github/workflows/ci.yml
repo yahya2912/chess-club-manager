@@ -170,8 +170,16 @@ jobs:
           root_file: proposal.tex
           working_directory: docs
 
-      - name: Upload PDF artifact
+      - name: Compile user manual
+        uses: xu-cheng/latex-action@v3
+        with:
+          root_file: user-manual.tex
+          working_directory: docs/user-manual
+
+      - name: Upload PDF artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: proposal-pdf
-          path: docs/proposal.pdf
+          name: documentation-pdfs
+          path: |
+            docs/proposal.pdf
+            docs/user-manual/user-manual.pdf
