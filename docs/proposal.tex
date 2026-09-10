@@ -174,18 +174,19 @@ transactional and inserts all required round rows together with the tournament.
 % ============================================================
 
 The frontend is a \textbf{Python/tkinter} desktop application, packaged as a
-\texttt{.deb} installer as required. The API URL and \texttt{X-API-Key} are read
-from environment configuration rather than entered in a startup dialog. The
-final application uses six tabs: \emph{Players}, \emph{Standings},
-\emph{Rating History}, \emph{Record Game}, \emph{Register Player} and
-\emph{Create Tournament}. tkinter is chosen because it ships with the Python
-standard library and packages cleanly into a Debian archive.
+\texttt{.deb} installer as required. At startup, a connection dialog asks for
+the API URL and \texttt{X-API-Key}; the frontend validates those values against
+the API before opening the main application. The final application uses six
+tabs: \emph{Players}, \emph{Standings}, \emph{Rating History}, \emph{Record
+Game}, \emph{Register Player} and \emph{Create Tournament}. tkinter is chosen
+because it ships with the Python standard library and packages cleanly into a
+Debian archive.
 
 \begin{figure}[ht]
 \centering
 \begin{minipage}[t]{0.47\linewidth}\centering
   \includegraphics[width=\linewidth]{assets/figure_2.png}
-  \captionof{figure}{Early connection-dialog sketch from the planning phase; final configuration is environment-based.}
+  \captionof{figure}{Connection-dialog sketch; the final implementation asks for API URL and \texttt{X-API-Key} at startup.}
   \label{fig:fe-connect}
 \end{minipage}\hfill
 \begin{minipage}[t]{0.47\linewidth}\centering
@@ -209,38 +210,39 @@ standard library and packages cleanly into a Debian archive.
 \end{figure}
 
 Figures~\ref{fig:fe-connect}--\ref{fig:fe-second} are retained as the original
-planning sketches. During implementation the interface was simplified into a
-single six-tab tkinter window. The \emph{Players} tab lists players and creates
-new ones; \emph{Create Tournament} creates a tournament and displays the
-new round IDs; \emph{Register Player} connects players to tournaments;
-\emph{Record Game} records results; \emph{Standings} displays the calculated
-ranking; and \emph{Rating History} displays all Elo-history rows or filters
-them by player. Successful writes refresh the relevant read views so newly
-created players and tournaments become selectable without restarting the GUI.
+planning sketches. During implementation the interface was organised into a
+startup connection dialog followed by a single six-tab tkinter window. The
+\emph{Players} tab lists players and creates new ones; \emph{Create Tournament}
+creates a tournament and displays the new round IDs; \emph{Register Player}
+connects players to tournaments; \emph{Record Game} records results;
+\emph{Standings} displays the calculated ranking; and \emph{Rating History}
+displays all Elo-history rows or filters them by player. Successful writes
+refresh the relevant read views so newly created players and tournaments become
+selectable without restarting the GUI.
 
 % ============================================================
 \section{Operation with Docker Compose}
 % ============================================================
 
-The active \texttt{docker-compose.yml} service is \texttt{postgres}, using the
-official \texttt{postgres:16} image with persistent storage and the configured
-database credentials. The FastAPI application is started locally with Uvicorn
-from the Python environment and connects to PostgreSQL using values from the
-\texttt{.env} configuration. The repository includes \texttt{scripts/run-local.sh}
-to load the environment, start PostgreSQL, start the API and then launch the
-tkinter frontend. The frontend can also be built as a Debian package and
-installed separately. This separation keeps the database reproducible through
-Docker while allowing the Python API and desktop GUI to run directly on the
-host system.
+The backend consists of two services in \texttt{docker-compose.yml}:
+\texttt{postgres}, using the official \texttt{postgres:16} image with persistent
+storage and database initialisation scripts, and \texttt{api}, built from
+\texttt{api/Dockerfile}. The API container connects to PostgreSQL over Docker's
+internal network using the service hostname \texttt{postgres}; both services
+start together with \texttt{docker compose up -d --build}. The frontend remains
+outside Docker and is delivered separately as a Debian package. Credentials and
+the API key live in \texttt{.env}. This matches the required deployment model:
+containerized backend plus installed desktop frontend.
 
 % ============================================================
 \section{Scope, milestones and risks}
 % ============================================================
 
 \textbf{Scope.} 7 tables, 8 application endpoints (4 read, 4 write) plus the
-health endpoint, and a 6-tab tkinter frontend. Automatic Swiss pairing,
-player-opening analytics, user accounts, edit/delete workflows and tournament
-closing are explicitly outside the final scope.
+health endpoint, and a startup connection dialog followed by a 6-tab tkinter
+frontend. Automatic Swiss pairing, player-opening analytics, user accounts,
+edit/delete workflows and tournament closing are explicitly outside the final
+scope.
 
 \textbf{Milestones and schedule.}
 
@@ -251,8 +253,8 @@ closing are explicitly outside the final scope.
 \midrule
 1     & Schema, DDL and seed data ready in PostgreSQL, including all seven final tables and constraints & 8 \\
 2--3  & FastAPI read/write endpoints, \texttt{X-API-Key} dependency, standings/Buchholz query and Elo business logic & 12 \\
-4--5  & tkinter frontend with six final tabs, local launcher and \texttt{.deb} packaging & 10 \\
-6     & \texttt{pytest} and database smoke tests, LaTeX documentation with CI, and 8--10 min demonstration video & 10 \\
+4--5  & Docker Compose backend, tkinter frontend with connection dialog and six tabs, plus \texttt{.deb} packaging & 10 \\
+6     & \texttt{pytest}, Compose/database smoke tests, LaTeX documentation with CI/release automation, and 8--10 min demonstration video & 10 \\
 \bottomrule
 \end{tabularx}
 
@@ -268,7 +270,7 @@ build-system concern separate from the relational database itself.
 % ============================================================
 
 The system counts as done and correct when the criteria below are verified by
-the automated test suite and local PostgreSQL test environment.
+the automated test suite and the containerized/local PostgreSQL test environments.
 
 \textbf{Acceptance criteria.}
 \begin{itemize}[topsep=2pt]
@@ -300,6 +302,9 @@ the automated test suite and local PostgreSQL test environment.
         implemented read and write endpoints, including player creation,
         tournament creation with automatic rounds, registration, game recording,
         rating-history filtering and standings, plus the documented 4xx cases.
+  \item \textbf{Deployment:} CI builds the API image, starts PostgreSQL and the
+        FastAPI service with Docker Compose, and verifies the public health
+        endpoint. It also builds and inspects the Debian frontend package.
   \item \textbf{Business rule (risk 1).} Dedicated tests assert HTTP~409 for an
         unregistered player; a legal game must update both players' Elo values
         symmetrically and write one \texttt{rating\_history} row for each.
