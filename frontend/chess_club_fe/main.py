@@ -17,9 +17,10 @@ def connection_dialog(root):
     dialog = tk.Toplevel(root)
     dialog.title("Connect to Chess Club API")
     dialog.resizable(False, False)
-    dialog.transient(root)
-    dialog.grab_set()
 
+    # Keep the dialog independent from the withdrawn root window. On macOS,
+    # making it transient to a withdrawn parent can leave the process visible
+    # in the Dock while the dialog itself never appears.
     frame = ttk.Frame(dialog, padding=16)
     frame.pack(fill="both", expand=True)
 
@@ -55,8 +56,27 @@ def connection_dialog(root):
     ttk.Button(frame, text="Connect", command=connect).grid(row=4, column=0, sticky="e")
 
     dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
-    url_entry.focus_set()
     dialog.bind("<Return>", lambda _event: connect())
+
+    # Ensure the dialog is visible and focused, including when launched from a
+    # terminal on macOS where tkinter windows can otherwise open behind others.
+    dialog.update_idletasks()
+    width = dialog.winfo_reqwidth()
+    height = dialog.winfo_reqheight()
+    x = max(0, (dialog.winfo_screenwidth() - width) // 2)
+    y = max(0, (dialog.winfo_screenheight() - height) // 3)
+    dialog.geometry(f"+{x}+{y}")
+    dialog.deiconify()
+    dialog.lift()
+    try:
+        dialog.attributes("-topmost", True)
+        dialog.after(250, lambda: dialog.attributes("-topmost", False))
+    except tk.TclError:
+        pass
+    dialog.focus_force()
+    url_entry.focus_set()
+    dialog.grab_set()
+
     root.wait_window(dialog)
     return connected["ok"]
 
