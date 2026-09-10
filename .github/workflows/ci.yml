@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
     branches: [main]
 
@@ -58,21 +59,9 @@ jobs:
           HISTORY_COUNT=$(psql -h localhost -U chess -d chessdb -tAc "SELECT COUNT(*) FROM rating_history;")
 
           echo "players=$PLAYER_COUNT games=$GAME_COUNT rating_history=$HISTORY_COUNT"
-
-          [ "$PLAYER_COUNT" -eq 6 ] || {
-            echo "expected 6 players, got $PLAYER_COUNT"
-            exit 1
-          }
-
-          [ "$GAME_COUNT" -eq 6 ] || {
-            echo "expected 6 games, got $GAME_COUNT"
-            exit 1
-          }
-
-          [ "$HISTORY_COUNT" -eq 18 ] || {
-            echo "expected 18 rating_history rows, got $HISTORY_COUNT"
-            exit 1
-          }
+          [ "$PLAYER_COUNT" -eq 6 ]
+          [ "$GAME_COUNT" -eq 6 ]
+          [ "$HISTORY_COUNT" -eq 18 ]
 
       - name: Verify Elo symmetry (acceptance criterion)
         env:
@@ -83,27 +72,21 @@ jobs:
             SELECT bool_and(delta_sum = 0) FROM (
               SELECT rh1.player_id AS p1, rh2.player_id AS p2,
                      (rh1.elo - lag(rh1.elo) OVER (
-                       PARTITION BY rh1.player_id
-                       ORDER BY rh1.valid_from
+                       PARTITION BY rh1.player_id ORDER BY rh1.valid_from
                      ))
                      +
                      (rh2.elo - lag(rh2.elo) OVER (
-                       PARTITION BY rh2.player_id
-                       ORDER BY rh2.valid_from
+                       PARTITION BY rh2.player_id ORDER BY rh2.valid_from
                      )) AS delta_sum
               FROM rating_history rh1
-              JOIN game g
-                ON g.white_id = rh1.player_id
-              JOIN rating_history rh2
-                ON rh2.player_id = g.black_id
+              JOIN game g ON g.white_id = rh1.player_id
+              JOIN rating_history rh2 ON rh2.player_id = g.black_id
               WHERE rh1.valid_from = (
-                SELECT max(valid_from)
-                FROM rating_history rh
+                SELECT max(valid_from) FROM rating_history rh
                 WHERE rh.player_id = rh1.player_id
               )
               AND rh2.valid_from = (
-                SELECT max(valid_from)
-                FROM rating_history rh
+                SELECT max(valid_from) FROM rating_history rh
                 WHERE rh.player_id = rh2.player_id
               )
             ) x
@@ -156,37 +139,86 @@ jobs:
           TEST_API_KEY: test-key
         run: pytest tests -v
 
-  docs:
-    name: Compile LaTeX documentation
+  compose-smoke:
+    name: Docker Compose backend smoke test
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Compile proposal.tex
-        uses: xu-cheng/latex-action@v3
-        with:
-          root_file: proposal.tex
-          working_directory: docs
+      - name: Prepare environment
+        run: cp .env.example .env
 
-      - name: Compile user manual
-        uses: xu-cheng/latex-action@v3
-        with:
-          root_file: user-manual.tex
-          working_directory: docs/user-manual
+      - name: Start PostgreSQL and API
+        run: docker compose up -d --build
 
-      - name: Compile developer manual
-        uses: xu-cheng/latex-action@v3
+      - name: Verify API health
+        run: |
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8000/health | grep -q '"status":"ok"'; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose ps
+          docker compose logs api
+          exit 1
+
+      - name: Stop backend
+        if: always()
+        run: docker compose down -v
+
+  package:
+    name: Build Debian frontend package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build .deb
+        run: sh frontend/debian/build-deb.sh
+
+      - name: Inspect package
+        run: dpkg-deb --info frontend/debian/chess-club-manager_1.0.0_all.deb
+
+      - name: Upload Debian package
+        uses: actions/upload-artifact@v4
         with:
-          root_file: dev-manual.tex
-          working_directory: docs/dev-manual
+          name: chess-club-manager-deb
+          path: frontend/debian/chess-club-manager_1.0.0_all.deb
+
+  docs:
+    name: Build LaTeX documentation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install LaTeX tools
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y latexmk texlive-latex-extra texlive-fonts-recommended
+
+      - name: Build all PDFs with Makefile
+        run: make all
 
       - name: Upload PDF artifacts
         uses: actions/upload-artifact@v4
         with:
           name: documentation-pdfs
-          path: |
-            docs/proposal.pdf
-            docs/user-manual/user-manual.pdf
-            docs/dev-manual/dev-manual.pdf
+          path: out/*.pdf
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "Chess Club Manager ${{ github.ref_name }}" \
+            --notes "Automatically built term-project documentation for ${{ github.ref_name }}." \
+            out/*.pdf
