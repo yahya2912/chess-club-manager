@@ -5,8 +5,8 @@ import urllib.request
 import urllib.parse
 import urllib.error
 
-BASE_URL = os.environ.get("CHESS_API_URL", "http://localhost:8000")
-API_KEY = os.environ.get("CHESS_API_KEY", "dev-key-change-in-production")
+BASE_URL = os.environ.get("CHESS_API_URL", "http://localhost:8000").rstrip("/")
+API_KEY = os.environ.get("CHESS_API_KEY", "")
 
 
 class ApiError(Exception):
@@ -14,6 +14,13 @@ class ApiError(Exception):
         self.status = status
         self.detail = detail
         super().__init__(f"HTTP {status}: {detail}")
+
+
+def configure(base_url: str, api_key: str):
+    """Configure the API endpoint and key for the current frontend session."""
+    global BASE_URL, API_KEY
+    BASE_URL = base_url.strip().rstrip("/")
+    API_KEY = api_key.strip()
 
 
 def _request(method, path, params=None, body=None):
