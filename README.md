@@ -17,31 +17,35 @@ A self-hosted desktop application for managing chess-club tournaments and Elo ra
 - Store and view Elo rating history
 - Calculate tournament standings with points and Buchholz tiebreaks
 - Protect application API routes with an `X-API-Key`
+- Configure the API URL and key through a startup connection dialog
 
 Automatic pairing generation is intentionally outside the project scope.
 
 ## Architecture
 
 ```text
-tkinter desktop frontend
+tkinter desktop frontend (.deb)
         ↓ HTTP + X-API-Key
-FastAPI backend
+FastAPI container
         ↓ psycopg
-PostgreSQL 16
+PostgreSQL 16 container
 ```
+
+Docker Compose orchestrates the backend services (PostgreSQL + FastAPI). The frontend runs separately as a desktop application and never accesses PostgreSQL directly.
 
 **Stack:** PostgreSQL 16 · FastAPI · Python/tkinter · Docker Compose · pytest · LaTeX · GitHub Actions
 
 ## Repository Structure
 
 ```text
-api/                    FastAPI backend and automated tests
+api/                    FastAPI backend, Dockerfile and automated tests
 db/                     PostgreSQL schema and seed data
 frontend/chess_club_fe/  tkinter desktop frontend
 frontend/debian/         Debian package files and build script
 docs/                    proposal, User Manual and Developer Manual
 scripts/                 local development launcher
-.github/workflows/       continuous integration
+.github/workflows/       continuous integration and release automation
+Makefile                 builds all documentation PDFs into out/
 ```
 
 ## Quick Start
@@ -52,24 +56,13 @@ Create the local configuration:
 cp .env.example .env
 ```
 
-Create the Python environment:
+Start the complete backend:
 
 ```bash
-python3 -m venv api/.venv
-api/.venv/bin/pip install -r api/requirements.txt
+docker compose up -d --build
 ```
 
-On Debian/Ubuntu Linux, start the local application from the repository root with:
-
-```bash
-./scripts/run-local.sh
-```
-
-The script starts PostgreSQL, FastAPI and the tkinter frontend.
-
-The main target environment is Linux. For macOS and Windows startup instructions, see the [User Manual](docs/user-manual/README.md).
-
-A running backend can be checked at:
+Check the API:
 
 ```text
 http://127.0.0.1:8000/health
@@ -81,14 +74,26 @@ Expected response:
 {"status":"ok"}
 ```
 
-## Testing
-
-Install the development requirements and run the API test suite:
+Start the source frontend:
 
 ```bash
+PYTHONPATH="$PWD/frontend" python3 -m chess_club_fe.main
+```
+
+At startup, enter the API URL (for local use: `http://127.0.0.1:8000`) and the `API_KEY` value from `.env`.
+
+On Debian/Ubuntu Linux, `./scripts/run-local.sh` starts the containerized backend and then launches the frontend. For macOS and Windows instructions, see the [User Manual](docs/user-manual/README.md).
+
+## Testing
+
+Create a development environment and run the API test suite:
+
+```bash
+python3 -m venv api/.venv
+api/.venv/bin/pip install -r api/requirements.txt
 api/.venv/bin/pip install -r api/requirements-dev.txt
 cd api
-../api/.venv/bin/pytest tests -v
+.venv/bin/pytest tests -v
 ```
 
 GitHub Actions automatically verifies:
@@ -96,7 +101,23 @@ GitHub Actions automatically verifies:
 - PostgreSQL schema and deterministic seed data
 - database acceptance checks
 - FastAPI endpoint and business-logic tests
-- compilation of the LaTeX proposal, User Manual and Developer Manual
+- Docker Compose startup of PostgreSQL + FastAPI
+- Debian frontend package creation
+- Makefile-driven compilation of the LaTeX proposal, User Manual and Developer Manual
+
+## Documentation Build
+
+Requirement: `latexmk` and a suitable TeX Live/MacTeX installation.
+
+Build all PDFs from the repository root:
+
+```bash
+make all
+```
+
+The PDFs are written to `out/`. Use `make clean` for auxiliary files or `make distclean` to remove the complete output directory.
+
+Pushing a version tag matching `v*` runs CI and creates a GitHub Release containing the generated documentation PDFs.
 
 ## Debian Package
 
@@ -112,7 +133,7 @@ Output:
 frontend/debian/chess-club-manager_1.0.0_all.deb
 ```
 
-The Debian package contains the desktop frontend. PostgreSQL and the FastAPI backend remain separate runtime components.
+The package contains the desktop frontend. The PostgreSQL and FastAPI backend services are started separately with Docker Compose.
 
 ## Documentation
 
@@ -121,8 +142,6 @@ The Debian package contains the desktop frontend. PostgreSQL and the FastAPI bac
 - [User Manual — LaTeX](docs/user-manual/user-manual.tex)
 - [Developer Manual](docs/dev-manual/README.md)
 - [Developer Manual — LaTeX](docs/dev-manual/dev-manual.tex)
-
-The CI workflow compiles the LaTeX documents and uploads the generated PDFs as workflow artifacts.
 
 ## Project Scope
 
