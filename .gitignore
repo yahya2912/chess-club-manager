@@ -8,10 +8,9 @@ __pycache__/
 .venv/
 .DS_Store
 .pytest_cache/
-docs/proposal.pdf
-
-# Local environment
-.env
+out/
+docs/*.pdf
+docs/*/*.pdf
 
 # Debian build artifacts
 frontend/debian/*.deb
