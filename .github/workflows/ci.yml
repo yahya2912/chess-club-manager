@@ -176,6 +176,12 @@ jobs:
           root_file: user-manual.tex
           working_directory: docs/user-manual
 
+      - name: Compile developer manual
+        uses: xu-cheng/latex-action@v3
+        with:
+          root_file: dev-manual.tex
+          working_directory: docs/dev-manual
+
       - name: Upload PDF artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -183,3 +189,4 @@ jobs:
           path: |
             docs/proposal.pdf
             docs/user-manual/user-manual.pdf
+            docs/dev-manual/dev-manual.pdf
