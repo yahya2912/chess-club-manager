@@ -5,35 +5,35 @@
 
 ## 1. Overview
 
-The **Chess Club Tournament & Rating Manager** is a small desktop application for managing chess-club tournaments and Elo ratings.
+The **Chess Club Tournament & Rating Manager** is a desktop application for managing chess-club tournaments and Elo ratings.
 
 You can use it to:
 
 - create players;
-- create tournaments and their rounds;
-- register players for tournaments;
+- create tournaments and rounds;
+- register players;
 - record game results;
 - update Elo ratings automatically;
 - view rating history;
-- view tournament standings with Buchholz tiebreaks.
+- view standings with Buchholz tiebreaks.
 
 The application has six tabs: **Players**, **Standings**, **Rating History**, **Record Game**, **Register Player**, and **Create Tournament**.
 
-The normal workflow is:
+Normal workflow:
 
 **Create players → Create tournament → Register players → Record games → Check standings and rating history.**
 
 ## 2. Setup and starting the application
 
-### What you need
+### Requirements
 
-Before running the project, install:
+Install:
 
-- **Docker Desktop** or Docker Engine with Docker Compose;
-- **Python 3**;
-- **Git** if you want to clone the repository.
+- Docker Desktop or Docker Engine with Docker Compose;
+- Python 3;
+- Git, if the repository must be cloned.
 
-The project also needs a `.env` file in the repository root. Create it from `.env.example` and keep the same structure:
+Create `.env` in the repository root from `.env.example`:
 
 ```env
 POSTGRES_USER=chess
@@ -44,154 +44,93 @@ POSTGRES_PORT=5432
 API_KEY=change-me
 ```
 
-For a first source-based setup, create the Python virtual environment and install the API requirements.
+### Start the backend
 
-**Linux / macOS:**
-
-```bash
-python3 -m venv api/.venv
-api/.venv/bin/pip install -r api/requirements.txt
-```
-
-**Windows PowerShell:**
-
-```powershell
-py -m venv api/.venv
-.\api\.venv\Scripts\pip install -r api\requirements.txt
-```
-
-### Linux (Debian / Ubuntu)
-
-Linux is the main target environment.
-
-From the repository root, the easiest option is:
+From the repository root, start **PostgreSQL and FastAPI together**:
 
 ```bash
-./scripts/run-local.sh
+docker compose up -d --build
 ```
 
-This starts PostgreSQL, FastAPI, and the tkinter frontend.
-
-If the Debian package is installed, the frontend can also be started with:
-
-```bash
-chess-club-manager
-```
-
-The database and API must already be running in that case.
-
-### macOS
-
-On macOS, run the components manually.
-
-First Terminal window:
-
-```bash
-cd /path/to/chess-club-manager
-docker compose up -d postgres
-set -a
-source .env
-set +a
-api/.venv/bin/uvicorn app.main:app --app-dir api --host 127.0.0.1 --port 8000
-```
-
-Keep that Terminal window open.
-
-Then open a second Terminal window:
-
-```bash
-cd /path/to/chess-club-manager
-export CHESS_API_URL="http://127.0.0.1:8000"
-export CHESS_API_KEY="$(grep '^API_KEY=' .env | cut -d= -f2-)"
-PYTHONPATH="$PWD/frontend" python3 -m chess_club_fe.main
-```
-
-The **Chess Club Manager** window should open.
-
-### Windows
-
-On Windows, use **PowerShell** and Docker Desktop.
-
-First PowerShell window:
-
-```powershell
-cd C:\path\to\chess-club-manager
-docker compose up -d postgres
-$env:POSTGRES_USER="chess"
-$env:POSTGRES_PASSWORD="change-me"
-$env:POSTGRES_DB="chessdb"
-$env:POSTGRES_PORT="5432"
-$env:API_KEY="change-me"
-.\api\.venv\Scripts\uvicorn app.main:app --app-dir api --host 127.0.0.1 --port 8000
-```
-
-Use the same values as in your `.env` file. Keep this window open.
-
-Then open a second PowerShell window:
-
-```powershell
-cd C:\path\to\chess-club-manager
-$env:CHESS_API_URL="http://127.0.0.1:8000"
-$env:CHESS_API_KEY="change-me"
-$env:PYTHONPATH="$PWD\frontend"
-py -m chess_club_fe.main
-```
-
-Again, `CHESS_API_KEY` must match `API_KEY` from `.env`.
-
-### Quick backend check
-
-Before opening the GUI, you can visit:
+Check that the API is running by opening:
 
 ```text
 http://127.0.0.1:8000/health
 ```
 
-A working backend returns:
+Expected response:
 
 ```json
 {"status":"ok"}
 ```
 
+### Start the frontend from source
+
+**Linux / macOS:**
+
+```bash
+PYTHONPATH="$PWD/frontend" python3 -m chess_club_fe.main
+```
+
+**Windows PowerShell:**
+
+```powershell
+$env:PYTHONPATH="$PWD\frontend"
+py -m chess_club_fe.main
+```
+
+A startup dialog asks for:
+
+- **API URL** — for local use: `http://127.0.0.1:8000`
+- **X-API-Key** — enter the `API_KEY` value from `.env`
+
+The dialog checks the connection before the main application opens.
+
+### Linux helper and Debian package
+
+On Debian/Ubuntu Linux, the helper script can start the backend and source frontend:
+
+```bash
+./scripts/run-local.sh
+```
+
+If the Debian package is installed, launch the frontend with:
+
+```bash
+chess-club-manager
+```
+
+The PostgreSQL and FastAPI containers must already be running. The same startup connection dialog is used.
+
 ## 3. Using the application
 
 ### Players
 
-Open **Players** to view existing players or click **Add Player** to create one.
-
-Enter a name, optional birth year, and initial Elo. The default Elo is `1000`. Creating a player also creates the first rating-history entry automatically.
+Open **Players** to view existing players or click **Add Player** to create one. Enter a name, optional birth year, and initial Elo. The default Elo is `1000`. Creating a player also creates its first rating-history entry.
 
 ### Create Tournament
 
 Open **Create Tournament**, enter a name, start date in `YYYY-MM-DD` format, and the number of rounds. The application creates the tournament and all round records automatically.
 
-After creation, it shows the generated round IDs, for example:
+After creation, the generated round IDs are shown, for example:
 
 ```text
 Rounds: R1=#1, R2=#2
 ```
 
-Keep these IDs because **Record Game** asks for the round ID.
+Keep these IDs because **Record Game** uses the database round ID.
 
 ### Register Player
 
-Open **Register Player**, choose a player and tournament, optionally enter a seed, and click **Register**.
-
-Both players must be registered before their game can be recorded. The same player cannot be registered twice for the same tournament.
+Open **Register Player**, choose a player and tournament, optionally enter a seed, and click **Register**. Both players must be registered before their game can be recorded. Duplicate registration is blocked.
 
 ### Record Game
 
-Open **Record Game** and enter:
+Open **Record Game** and enter the round ID, White player, Black player, ECO code, and result. Valid results are `1-0`, `0-1`, and `1/2-1/2`.
 
-- Round ID;
-- White player;
-- Black player;
-- ECO code;
-- result: `1-0`, `0-1`, or `1/2-1/2`.
+A successful game immediately updates both Elo ratings and creates two rating-history entries.
 
-A successful game immediately updates both Elo ratings and creates two new rating-history entries.
-
-Available ECO codes in the supplied database are:
+Available ECO codes in the supplied reference data are:
 
 | Code | Opening |
 | --- | --- |
@@ -206,37 +145,33 @@ Available ECO codes in the supplied database are:
 
 Open **Standings** and choose a tournament to see points, Buchholz, wins, draws, losses, and games played.
 
-Open **Rating History** to see Elo values over time. You can show all players or select one player from the dropdown.
+Open **Rating History** to show all Elo-history rows or filter by player.
 
-## 4. Simple first workflow
+## 4. Functional verification
 
-For a quick test of the whole application:
+| Function | Test | Expected result |
+| --- | --- | --- |
+| Create player | Add Alice with Elo 1500 | Player and initial history entry appear |
+| Create tournament | Create one-round Club Open | Tournament and one round are created |
+| Register player | Register Alice and Bob | Both registrations succeed; duplicates are rejected |
+| Record game | Alice beats Bob | Game is saved and both Elo ratings change |
+| Rating history | Open Alice | Initial and updated Elo values are visible |
+| Standings | Open Club Open | Points, results, and Buchholz are displayed |
 
-1. Create two players, for example **Alice** and **Bob**.
-2. Create a one-round tournament called **Club Open**.
-3. Note the generated round ID, for example `R1=#1`.
-4. Register Alice and Bob for the tournament.
-5. Record a game using round ID `1`, ECO code `C50`, and a result such as `1-0`.
-6. Check **Players** to see the new Elo values.
-7. Check **Rating History** for the new entries.
-8. Check **Standings** for the tournament result.
-
-If all three views update correctly, the full core workflow is working.
+If these checks succeed, the complete core workflow works from the user's perspective.
 
 ## 5. Troubleshooting
 
-**The application cannot reach the API:** make sure FastAPI is running and check `http://127.0.0.1:8000/health`.
+**Cannot reach API:** run `docker compose ps`, then check `http://127.0.0.1:8000/health`.
 
-**Unauthorized / invalid API key:** make sure `CHESS_API_KEY` used by the frontend matches `API_KEY` used by the backend.
+**Connection dialog rejects the key:** use the exact `API_KEY` value from `.env`.
 
-**Docker command fails:** make sure Docker Desktop or Docker Engine is running, then try `docker compose up -d postgres` again.
+**Docker command fails:** make sure Docker is running, then retry `docker compose up -d --build`.
 
-**Player not registered:** register both players for the tournament before recording their game.
+**Player not registered:** register both players before recording their game.
 
-**Unknown round ID:** use one of the round IDs shown when the tournament was created.
+**Unknown round ID:** use one of the IDs shown after tournament creation.
 
 **Unknown ECO code:** use one of the ECO codes listed above.
 
-**Player already registered:** the same player can only be registered once per tournament.
-
-The delivered version intentionally does not include automatic pairing generation, editing/deleting records through the GUI, automatic tournament closing, or detailed opening statistics.
+The delivered version intentionally does not include automatic pairing generation, edit/delete GUI operations, automatic tournament closing, user accounts, or detailed opening analytics.
