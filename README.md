@@ -7,6 +7,10 @@ Author: **Yahya El Idrissi** · Summer Term 2026
 
 A self-hosted desktop application for managing chess-club tournaments and Elo ratings. It stores players, tournaments, registrations, rounds, games, openings and rating history in PostgreSQL and provides a tkinter GUI backed by a FastAPI API.
 
+## Demo Video
+
+[Watch the project presentation and live demo on YouTube](https://youtu.be/xtMlvPf5F0g)
+
 ## Features
 
 - Create players with an initial Elo rating
@@ -42,7 +46,7 @@ api/                    FastAPI backend, Dockerfile and automated tests
 db/                     PostgreSQL schema and seed data
 frontend/chess_club_fe/  tkinter desktop frontend
 frontend/debian/         Debian package files and build script
-docs/                    proposal, User Manual and Developer Manual
+docs/                    proposal, manuals and presentation source
 scripts/                 local development launcher
 .github/workflows/       continuous integration and release automation
 Makefile                 builds all documentation PDFs into out/
@@ -142,6 +146,7 @@ The package contains the desktop frontend. The PostgreSQL and FastAPI backend se
 - [User Manual — LaTeX](docs/user-manual/user-manual.tex)
 - [Developer Manual](docs/dev-manual/README.md)
 - [Developer Manual — LaTeX](docs/dev-manual/dev-manual.tex)
+- [Presentation — LaTeX](docs/slides/chess_club_video_slides.tex)
 
 ## Project Scope
 
